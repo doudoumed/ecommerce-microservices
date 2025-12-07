@@ -1,0 +1,164 @@
+services:
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"    # AMQP port
+      - "15672:15672"  # Management UI
+    
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Customer Service
+  customer-service:
+    build:
+      context: ./customer-service
+      dockerfile: Dockerfile
+    container_name: customer-service
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./customer-service:/app
+      - customer-data:/app/data
+    environment:
+      - FLASK_ENV=development
+    networks:
+      - microservices-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # Inventory Service
+  inventory-service:
+    build:
+      context: ./inventory-service
+      dockerfile: Dockerfile
+    container_name: inventory-service
+    ports:
+      - "5002:5002"
+    volumes:
+      - ./inventory-service:/app
+      - inventory-data:/app/data
+    environment:
+      - FLASK_ENV=development
+    networks:
+      - microservices-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # Order Service
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: order-service
+    ports:
+      - "5003:5003"
+    volumes:
+      - ./order-service:/app
+      - order-data:/app/data
+    environment:
+      - FLASK_ENV=development
+    networks:
+      - microservices-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # Payment Service
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    container_name: payment-service
+    ports:
+      - "5004:5004"
+    volumes:
+      - ./payment-service:/app
+      - payment-data:/app/data
+    environment:
+      - FLASK_ENV=development
+    networks:
+      - microservices-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # Shipping Service
+  shipping-service:
+    build:
+      context: ./shipping-service
+      dockerfile: Dockerfile
+    container_name: shipping-service
+    ports:
+      - "5005:5005"
+    volumes:
+      - ./shipping-service:/app
+      - shipping-data:/app/data
+    environment:
+      - FLASK_ENV=development
+    networks:
+      - microservices-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # Notification Service
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: notification-service
+    ports:
+      - "5006:5006"
+    volumes:
+      - ./notification-service:/app
+      - notification-data:/app/data
+    environment:
+      - FLASK_ENV=development
+    networks:
+      - microservices-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # API Gateway (Python with JWT & RBAC)
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./api-gateway:/app
+    environment:
+      - FLASK_ENV=development
+    networks:
+      - microservices-network
+    depends_on:
+      - customer-service
+      - inventory-service
+      - order-service
+      - payment-service
+      - shipping-service
+      - notification-service
+
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  customer-data:
+  inventory-data:
+  order-data:
+  payment-data:
+  shipping-data:
+  notification-data:

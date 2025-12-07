@@ -1,0 +1,466 @@
+
+
+## 1. تشغيل النظام
+
+```bash
+# بناء وتشغيل جميع الخدمات
+docker-compose up --build -d
+
+# متابعة السجلات
+docker-compose logs -f
+
+# فحص حالة الخدمات
+docker-compose ps
+```
+
+---
+
+## 2. اختبار API Gateway & Authentication
+
+### أ. تسجيل عميل جديد
+```bash
+curl -X POST http://localhost:8080/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Ahmed Ali",
+    "email": "ahmed@example.com",
+    "password": "password123",
+    "phone": "0555123456",
+    "address": "Setif, Algeria",
+    "role": "customer"
+  }'
+```
+
+**النتيجة المتوقعة**:
+```json
+{
+  "message": "Customer registered successfully",
+  "id": 1
+}
+```
+
+### ب. تسجيل موظف (Staff)
+```bash
+curl -X POST http://localhost:8080/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Sara Staff",
+    "email": "sara@company.com",
+    "password": "staff123",
+    "role": "staff"
+  }'
+```
+
+### ج. تسجيل مدير (Admin)
+```bash
+curl -X POST http://localhost:8080/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Mohamed Admin",
+    "email": "admin@company.com",
+    "password": "admin123",
+    "role": "admin"
+  }'
+```
+
+### د. تسجيل الدخول
+```bash
+# دخول كعميل
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "ahmed@example.com",
+    "password": "password123"
+  }'
+```
+
+### د. تسجيل الدخول
+```bash
+# دخول staff
+5
+```
+
+### د. تسجيل الدخول
+```bash
+# دخول ADMIN
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@company.com",
+    "password": "admin123"
+  }'
+```
+
+**احفظ الـ Token**:
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJlbWFpbCI6ImFobWVkQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwiZXhwIjoxNzY1MDM4NDY5fQ.PnJfUQkFBP78Xs6a4JMHQCWSvEpObXcI8PccW27twSo",
+  "user": {
+    "email": "ahmed@example.com",
+    "id": 1,
+    "name": "Ahmed Ali",
+    "role": "customer"
+  }
+}
+
+```
+
+```bash
+# حفظ Token في متغير
+export CUSTOMER_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJlbWFpbCI6ImFobWVkQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwiZXhwIjoxNzY1MTgxNDI3fQ.MwlbfzxRg6jOOPJAfEYX5nHaGeQnRJgvzl6AhGzMwFI"
+export STAFF_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJlbWFpbCI6InNhcmFAY29tcGFueS5jb20iLCJyb2xlIjoic3RhZmYiLCJleHAiOjE3NjUxOTA4MDd9.zrFDPTMrHsZ1liM_fG6mSIuF7cxvnGldm5ls-KRyj38"
+export ADMIN_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjozLCJlbWFpbCI6ImFkbWluQGNvbXBhbnkuY29tIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzY1MTgxNTY3fQ.t6CDfDUtOICkBFrtcvmfelHyhBDk_WUxXEaoaXtFBRA"
+---
+
+## 3. اختبار RBAC (صلاحيات الأدوار)
+
+### أ. اختبار صلاحيات Customer
+
+#### ✅ يمكن للعميل: عرض المنتجات (بدون Token)
+```bash
+curl http://localhost:8080/api/products
+```
+
+#### ✅ يمكن للعميل: إنشاء طلب
+```bash
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -d '{
+    "product_id": 1,
+    "quantity": 2
+  }'
+```
+
+#### ✅ يمكن للعميل: عرض طلباته فقط
+```bash
+curl -X GET http://localhost:8080/api/orders \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+```
+
+#### ✅ يمكن للعميل: عرض بياناته الشخصية
+```bash
+curl -X GET http://localhost:8080/api/customers/1 \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+```
+
+#### ❌ لا يمكن للعميل: عرض بيانات عميل آخر
+```bash
+curl -X GET http://localhost:8080/api/customers/2 \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+```
+**النتيجة المتوقعة**: `403 Forbidden`
+
+#### ❌ لا يمكن للعميل: إنشاء منتج جديد
+```bash
+curl -X POST http://localhost:8080/api/products \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -d '{
+    "name": "New Product",
+    "price": 100,
+    "quantity": 50
+  }'
+```
+**النتيجة المتوقعة**: `403 Insufficient permissions`
+
+#### ❌ لا يمكن للعميل: عرض جميع العملاء
+```bash
+curl http://localhost:8080/api/customers \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN"
+```
+**النتيجة المتوقعة**: `403 Forbidden`
+
+---
+
+### ب. اختبار صلاحيات Staff
+
+#### ✅ يمكن للموظف: عرض جميع الطلبات
+```bash
+curl -X GET http://localhost:8080/api/orders \
+  -H "Authorization: Bearer $STAFF_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+```
+
+#### ✅ يمكن للموظف: تحديث حالة طلب
+```bash
+curl -X PUT http://localhost:8080/api/orders/1/status \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $STAFF_TOKEN" \
+  -d '{
+    "status": "processing"
+  }'
+```
+
+#### ✅ يمكن للموظف: إضافة منتج جديد
+```bash
+curl -X POST http://localhost:8080/api/products \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $STAFF_TOKEN" \
+  -d '{
+    "name": "Gaming Mouse",
+    "description": "RGB Gaming Mouse",
+    "price": 45.99,
+    "quantity": 100,
+    "sku": "MOUSE001"
+  }'
+```
+
+#### ✅ يمكن للموظف: تعديل منتج
+```bash
+curl -X PUT http://localhost:8080/api/products/1 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $STAFF_TOKEN" \
+  -d '{
+    "name": "Laptop Updated",
+    "description": "High-performance laptop",
+    "price": 1150.00,
+    "quantity": 150
+  }'
+```
+
+#### ❌ لا يمكن للموظف: حذف منتج
+```bash
+curl -X DELETE http://localhost:8080/api/products/1 \
+  -H "Authorization: Bearer $STAFF_TOKEN"
+```
+**النتيجة المتوقعة**: `403 Insufficient permissions`
+
+############ ❌ لا يمكن للموظف: حذف عميل
+```bash
+curl -X DELETE http://localhost:8080/api/customers/1 \
+  -H "Authorization: Bearer $STAFF_TOKEN"
+```
+**النتيجة المتوقعة**: `403 Insufficient permissions`
+
+---
+
+### ج. اختبار صلاحيات Admin
+
+#### ✅ يمكن للمدير: كل شيء
+```bash
+# عرض جميع العملاء
+curl -X GET http://localhost:8080/api/customers \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+
+# حذف عميل
+curl -X DELETE http://localhost:8080/api/customers/4 \
+  -H "Authorization: Bearer $ADMIN_TOKEN"\
+  -H "Content-Type: application/json" \
+  -d "{}"
+
+# حذف منتج
+curl -X DELETE http://localhost:8080/api/products/10 \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+
+# عرض جميع المدفوعات
+curl -X GET http://localhost:8080/api/payments \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+  
+```
+
+---
+
+## 4. اختبار الـ Workflow الكامل
+
+### أ. العميل يُنشئ طلب جديد
+```bash
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -d '{
+    "product_id": 1,
+    "quantity": 3
+  }'
+```
+
+**ما يحدث خلف الكواليس**:
+1. ✅ **Gateway**: يتحقق من JWT ويفحص الصلاحيات
+2. ✅ **Order Service**: يتحقق من العميل والمخزون
+3. ✅ **Order Service**: يحجز المنتج من المخزون
+4. ✅ **Order Service**: ينشر حدث `order.created` إلى RabbitMQ
+5. ✅ **Payment Service**: يستمع للحدث ويعالج الدفع
+6. ✅ **Payment Service**: ينشر حدث `payment.completed`
+7. ✅ **Shipping Service**: يستمع ويُنشئ شحنة
+8. ✅ **Shipping Service**: ينشر حدث `shipment.created`
+9. ✅ **Notification Service**: يستمع لكل الأحداث ويرسل إشعارات
+
+### ب. فحص الطلب والحالات
+```bash
+# عرض الطلب
+curl -X GET http://localhost:8080/api/orders/145 \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+
+# فحص حالة المخزون
+curl http://localhost:8080/api/products/1
+
+# عرض المدفوعات
+curl -X GET http://localhost:8080/api/payments \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+  
+
+# عرض الشحنات
+curl http://localhost:8080/api/shipments \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN"
+
+# عرض الإشعارات
+curl http://localhost:8080/api/notifications/customer/1
+```
+
+---
+
+## 5. اختبار Rate Limiting
+
+```bash
+# إرسال أكثر من 100 طلب في دقيقة واحدة
+for i in {1..105}; do
+  curl http://localhost:8080/api/products
+done
+```
+
+**النتيجة المتوقعة**: بعد 100 طلب، ستحصل على:
+```json
+{
+  "error": "Rate limit exceeded"
+}
+```
+
+---
+
+## 6. اختبار الأخطاء
+
+### أ. Token منتهي الصلاحية
+```bash
+curl http://localhost:8080/api/orders \
+  -H "Authorization: Bearer expired_token_here"
+```
+**النتيجة**: `401 Invalid or expired token`
+
+### ب. بدون Token
+```bash
+curl http://localhost:8080/api/orders
+```
+**النتيجة**: `401 Token required`
+
+### ج. Token غير صالح
+```bash
+curl http://localhost:8080/api/orders \
+  -H "Authorization: Bearer invalid_token_123"
+```
+**النتيجة**: `401 Invalid or expired token`
+
+### د. طلب غير موجود
+```bash
+curl http://localhost:8080/api/orders/999 \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN"
+```
+**النتيجة**: `404 Order not found`
+
+### هـ. منتج غير متوفر
+```bash
+# إنشاء طلب لمنتج غير متوفر
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -d '{
+    "product_id": 1,
+    "quantity": 1000
+  }'
+```
+**النتيجة**: `400 Product not available in requested quantity`
+
+---
+
+## 7. مراقبة RabbitMQ
+
+افتح واجهة RabbitMQ Management:
+```
+http://localhost:15672
+Username: admin
+Password: admin
+```
+
+**ما يجب فحصه**:
+- **Exchanges**: تأكد من وجود `order_events`
+- **Queues**: 
+  - `payment_queue`
+  - `shipping_queue`
+  - `notification_queue`
+- **Messages**: شاهد الرسائل تتدفق عند إنشاء طلب
+
+---
+
+## 8. فحص السجلات (Logs)
+
+```bash
+# سجلات Gateway
+docker-compose logs -f api-gateway
+
+# سجلات Order Service
+docker-compose logs -f order-service
+
+# سجلات Payment Service
+docker-compose logs -f payment-service
+
+# سجلات Notification Service
+docker-compose logs -f notification-service
+```
+
+**ما يجب أن تراه**:
+- طلبات HTTP في Gateway
+- Events published/consumed
+- إشعارات مرسلة
+- أخطاء إن وجدت
+
+---
+
+## 9. إيقاف النظام
+
+```bash
+# إيقاف جميع الخدمات
+docker-compose down
+
+# إيقاف وحذف قواعد البيانات
+docker-compose down -v
+```
+
+---
+
+## 10. نصائح الاختبار
+
+✅ **استخدم Postman**: أسهل من curl للاختبار  
+✅ **احفظ Tokens**: استخدم Environment Variables  
+✅ **راقب RabbitMQ**: لفهم تدفق الأحداث  
+✅ **تابع Logs**: لرؤية ما يحدث داخل الخدمات  
+✅ **اختبر الصلاحيات**: جرّب كل الأدوار (customer, staff, admin)
+
+---
+
+## مثال: سيناريو كامل باستخدام Postman
+
+1. **Register** → احفظ customer_id
+2. **Login** → احفظ JWT token
+3. **Get Products** → اختر product_id
+4. **Create Order** → سيبدأ الـ workflow
+5. **انتظر 5 ثوان** (لمعالجة الدفع والشحن)
+6. **Get Order** → تحقق من `payment_status` و `shipping_status`
+7. **Get Notifications** → شاهد جميع الإشعارات المرسلة
+
+🎉 **تم اختبار النظام بالكامل!**
