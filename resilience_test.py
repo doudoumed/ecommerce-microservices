@@ -4,17 +4,16 @@ import threading
 
 BASE_URL = "http://localhost:8080"
 ADMIN_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjozLCJlbWFpbCI6ImFkbWluQGNvbXBhbnkuY29tIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzY1MTQ4OTM5fQ.JjwbI-cAefeDSR0AHeswhC01gMdfao22GxFB42P9rUE"
-CUSTOMER_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJlbWFpbCI6ImFobWVkQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwiZXhwIjoxNzY1MTkzNzQxfQ.k7O9RWEZLIVdYkq1-TX-Aio-0TRxxxIK7Zq76DzEhBE"
-
+CUSTOMER_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo2LCJlbWFpbCI6ImFkbWluQGV4YW1wbGUuY29tIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzY1Nzk2MjMzfQ.3o_OqJFLdbgCQv_K9tCqUUJ-wlBCQV9MaM1o_krljms"
 def test_rate_limiting():   
     print("\n--- Testing Rate Limiting ---")
-    print("Sending 15 requests to /api/orders (Limit: 10/min)...")
+    print("Sending 100 requests to /api/orders (Limit: 10/min)...")
     
-    for i in range(1, 16):
+    for i in range(1, 100):
         response = requests.post(
             f"{BASE_URL}/api/orders",
             headers={"Authorization": f"Bearer {CUSTOMER_TOKEN}", "Content-Type": "application/json"},
-            json={"product_id": 1, "quantity": 1}
+            json={"product_id": 2, "quantity": 1}
         )
         print(f"Request {i}: Status {response.status_code}")
         if response.status_code == 429:

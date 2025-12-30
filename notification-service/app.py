@@ -9,8 +9,50 @@ import pika
 import json
 import time
 import threading
+import logging
+from pythonjsonlogger import jsonlogger
+from flask import g
+from prometheus_flask_exporter import PrometheusMetrics
+
+import logstash
+
+# Configure Structured Logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Console Handler (JSON)
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter('%(asctime)s %(level)s %(name)s %(message)s')
+logHandler.setFormatter(formatter)
+logger.addHandler(logHandler)
+
+# Logstash Handler
+logstash_handler = logstash.TCPLogstashHandler('logstash', 5000, version=1)
+logger.addHandler(logstash_handler)
 
 app = Flask(__name__)
+metrics = PrometheusMetrics(app, path=None)
+
+from prometheus_client import generate_latest
+
+@app.route('/metrics')
+def metrics_route():
+    return generate_latest(), 200, {'Content-Type': 'text/plain; version=0.0.4'}
+
+@app.before_request
+def before_request():
+    # Extract Correlation ID from header
+    g.correlation_id = request.headers.get('X-Correlation-ID')
+    if not g.correlation_id:
+        g.correlation_id = "unknown"
+        
+    logger.info(f"Request received: {request.method} {request.path}", extra={
+        'service': 'notification-service',
+        'correlation_id': g.correlation_id,
+        'method': request.method,
+        'path': request.path
+    })
+
 CORS(app)
 
 RABBITMQ_HOST = 'rabbitmq'
@@ -34,13 +76,11 @@ init_db()
 
 def send_notification(customer_id, order_id, notification_type, message):
     """Send notification (email/SMS) - simulated"""
-    print(f"\n{'='*60}")
-    print(f"NOTIFICATION SENT")
-    print(f"To Customer: {customer_id}")
-    print(f"Order ID: {order_id}")
-    print(f"Type: {notification_type}")
-    print(f"Message: {message}")
-    print(f"{'='*60}\n")
+    logger.info(f"NOTIFICATION SENT: {notification_type} to Customer {customer_id}", extra={
+        'correlation_id': g.correlation_id,
+        'order_id': order_id,
+        'message': message
+    })
     
     # Save notification to database
     conn = sqlite3.connect('notifications.db')
@@ -58,7 +98,7 @@ def callback(ch, method, properties, body):
         event_type = message.get('event')
         data = message.get('data')
         
-        print(f"Notification Service received event: {event_type}")
+        logger.info(f"Notification Service received event: {event_type}", extra={'correlation_id': g.correlation_id})
         
         customer_id = data.get('customer_id')
         order_id = data.get('order_id')
@@ -90,7 +130,7 @@ def callback(ch, method, properties, body):
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:
-        print(f"Error processing message: {str(e)}")
+        logger.error(f"Error processing message: {str(e)}", extra={'correlation_id': 'system'})
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 def start_consumer():
@@ -114,10 +154,10 @@ def start_consumer():
             channel.basic_qos(prefetch_count=1)
             channel.basic_consume(queue=queue_name, on_message_callback=callback)
             
-            print('Notification Service: Waiting for events...')
+            logger.info('Notification Service: Waiting for events...', extra={'correlation_id': 'system'})
             channel.start_consuming()
         except Exception as e:
-            print(f"Consumer error: {str(e)}")
+            logger.error(f"Consumer error: {str(e)}", extra={'correlation_id': 'system'})
             time.sleep(5)
 
 # API endpoints

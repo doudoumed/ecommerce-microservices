@@ -10,7 +10,50 @@ import datetime
 from functools import wraps
 import hashlib
 
+import logging
+from pythonjsonlogger import jsonlogger
+from flask import g
+from prometheus_flask_exporter import PrometheusMetrics
+
+import logstash
+
+# Configure Structured Logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Console Handler (JSON)
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter('%(asctime)s %(level)s %(name)s %(message)s')
+logHandler.setFormatter(formatter)
+logger.addHandler(logHandler)
+
+# Logstash Handler
+logstash_handler = logstash.TCPLogstashHandler('logstash', 5000, version=1)
+logger.addHandler(logstash_handler)
+
 app = Flask(__name__)
+metrics = PrometheusMetrics(app, path=None)
+
+from prometheus_client import generate_latest
+
+@app.route('/metrics')
+def metrics_route():
+    return generate_latest(), 200, {'Content-Type': 'text/plain; version=0.0.4'}
+
+@app.before_request
+def before_request():
+    # Extract Correlation ID from header
+    g.correlation_id = request.headers.get('X-Correlation-ID')
+    if not g.correlation_id:
+        g.correlation_id = "unknown"
+        
+    logger.info(f"Request received: {request.method} {request.path}", extra={
+        'service': 'customer-service',
+        'correlation_id': g.correlation_id,
+        'method': request.method,
+        'path': request.path
+    })
+
 CORS(app)
 app.config['SECRET_KEY'] = 'your-secret-key-change-in-production'
 

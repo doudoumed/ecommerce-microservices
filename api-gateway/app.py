@@ -3,13 +3,45 @@ API Gateway - Single Entry Point with JWT Validation & RBAC
 Port: 8080
 """
 from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, g
 from flask_cors import CORS
 import jwt
 import requests
 from functools import wraps
 import time
+import logging
+from pythonjsonlogger import jsonlogger
+import uuid
+from prometheus_flask_exporter import PrometheusMetrics
+
+import logstash
+
+# Configure Structured Logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Console Handler (JSON)
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter('%(asctime)s %(level)s %(name)s %(message)s')
+logHandler.setFormatter(formatter)
+logger.addHandler(logHandler)
+
+# Logstash Handler
+logstash_handler = logstash.TCPLogstashHandler('logstash', 5000, version=1)
+logger.addHandler(logstash_handler)
 
 app = Flask(__name__)
+metrics = PrometheusMetrics(app, path=None)
+
+from prometheus_client import generate_latest
+
+@app.route('/metrics')
+def metrics_route():
+    return generate_latest(), 200, {'Content-Type': 'text/plain; version=0.0.4'}
+
+@app.route('/test')
+def test_route():
+    return "OK", 200
 CORS(app)
 app.config['SECRET_KEY'] = 'your-secret-key-change-in-production'
 
@@ -56,9 +88,7 @@ from flask_limiter.util import get_remote_address
 
 # ... (imports)
 
-app = Flask(__name__)
-CORS(app)
-app.config['SECRET_KEY'] = 'your-secret-key-change-in-production'
+
 
 # Rate Limiter Configuration
 limiter = Limiter(
@@ -123,10 +153,22 @@ def proxy_request(service_url, path, method, headers, data=None, params=None):
     """Forward request to microservice"""
     url = f"{service_url}{path}"
     
+    # Ensure Correlation ID
+    correlation_id = request.headers.get('X-Correlation-ID') or str(uuid.uuid4())
+    
     try:
         # Remove hop-by-hop headers
         headers_to_forward = {k: v for k, v in headers.items() 
                               if k.lower() not in ['host', 'connection']}
+        
+        # Add Correlation ID to downstream headers
+        headers_to_forward['X-Correlation-ID'] = correlation_id
+        
+        logger.info(f"Proxying request to {url}", extra={
+            'method': method,
+            'service_url': url,
+            'correlation_id': correlation_id
+        })
         
         if method == 'GET':
             response = requests.get(url, headers=headers_to_forward, params=params, timeout=10)
@@ -146,10 +188,13 @@ def proxy_request(service_url, path, method, headers, data=None, params=None):
             headers=dict(response.headers)
         )
     except requests.exceptions.Timeout:
+        logger.error(f"Service timeout: {url}", extra={'correlation_id': correlation_id})
         return jsonify({'error': 'Service timeout'}), 504
     except requests.exceptions.ConnectionError:
+        logger.error(f"Service unavailable: {url}", extra={'correlation_id': correlation_id})
         return jsonify({'error': 'Service unavailable'}), 503
     except Exception as e:
+        logger.error(f"Proxy error: {str(e)}", extra={'correlation_id': correlation_id, 'stack': str(e)})
         return jsonify({'error': str(e)}), 500
 
 # Remove manual rate limiting middleware and check_rate_limit function
@@ -159,7 +204,7 @@ def proxy_request(service_url, path, method, headers, data=None, params=None):
 def before_request():
     """Access logging"""
     client_ip = request.remote_addr
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {request.method} {request.path} - IP: {client_ip}")
+    logger.info(f"Incoming request: {request.method} {request.path}", extra={'client_ip': client_ip})
 
 # Apply specific limits to critical endpoints
 
@@ -290,7 +335,7 @@ def customers_proxy(customer_id=None):
         if user_role != 'admin':
             # ⬅️ هذا هو التغيير الرئيسي: إعادة توجيه الطلب داخلياً إلى /api/customers/user_id
             customer_id = user_id 
-            print(f"Non-admin role '{user_role}' accessing list endpoint. Coercing request to self-access: ID {customer_id}")
+            logger.warning(f"Non-admin role '{user_role}' accessing list endpoint. Coercing request to self-access: ID {customer_id}", extra={'correlation_id': request.headers.get('X-Correlation-ID')})
 
     # منطق النطاق (للتأكد من عدم وصول العميل إلى بيانات شخص آخر عبر /api/customers/{id})
     if method in ['GET', 'PUT', 'DELETE'] and customer_id is not None:
@@ -431,4 +476,5 @@ def not_found(e):
     return jsonify({'error': 'Route not found'}), 404
 
 if __name__ == '__main__':
+    print(app.url_map)
     app.run(host='0.0.0.0', port=8080, debug=True)

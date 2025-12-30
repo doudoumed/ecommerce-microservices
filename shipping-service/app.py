@@ -11,7 +11,50 @@ import requests
 import time
 import threading
 
+import logging
+from pythonjsonlogger import jsonlogger
+from flask import g
+from prometheus_flask_exporter import PrometheusMetrics
+
+import logstash
+
+# Configure Structured Logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Console Handler (JSON)
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter('%(asctime)s %(level)s %(name)s %(message)s')
+logHandler.setFormatter(formatter)
+logger.addHandler(logHandler)
+
+# Logstash Handler
+logstash_handler = logstash.TCPLogstashHandler('logstash', 5000, version=1)
+logger.addHandler(logstash_handler)
+
 app = Flask(__name__)
+metrics = PrometheusMetrics(app, path=None)
+
+from prometheus_client import generate_latest
+
+@app.route('/metrics')
+def metrics_route():
+    return generate_latest(), 200, {'Content-Type': 'text/plain; version=0.0.4'}
+
+@app.before_request
+def before_request():
+    # Extract Correlation ID from header
+    g.correlation_id = request.headers.get('X-Correlation-ID')
+    if not g.correlation_id:
+        g.correlation_id = "unknown"
+        
+    logger.info(f"Request received: {request.method} {request.path}", extra={
+        'service': 'shipping-service',
+        'correlation_id': g.correlation_id,
+        'method': request.method,
+        'path': request.path
+    })
+
 CORS(app)
 
 RABBITMQ_HOST = 'rabbitmq'
@@ -57,7 +100,7 @@ def process_shipping(payment_data):
     """Create shipment after payment is completed"""
     order_id = payment_data['order_id']
     
-    print(f"Processing shipment for order {order_id}")
+    logger.info(f"Processing shipment for order {order_id}", extra={'correlation_id': g.correlation_id})
     
     # Simulate shipping preparation
     time.sleep(2)
@@ -90,8 +133,7 @@ def process_shipping(payment_data):
         'customer_id': payment_data['customer_id']
     })
     
-    print(f"Shipment created for order {order_id}, tracking: {tracking_number}")
-    print(f"Shipment created for order {order_id}, tracking: {tracking_number}")
+    logger.info(f"Shipment created for order {order_id}, tracking: {tracking_number}", extra={'correlation_id': g.correlation_id})
 
 def callback(ch, method, properties, body):
     """RabbitMQ message callback"""
@@ -100,14 +142,14 @@ def callback(ch, method, properties, body):
         event_type = message.get('event')
         data = message.get('data')
         
-        print(f"Received event: {event_type}")
+        logger.info(f"Received event: {event_type}", extra={'correlation_id': 'system'})
         
         if event_type == 'payment.completed':
             process_shipping(data)
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:
-        print(f"Error processing message: {str(e)}")
+        logger.error(f"Error processing message: {str(e)}", extra={'correlation_id': 'system'})
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 def start_consumer():
@@ -129,10 +171,10 @@ def start_consumer():
             channel.basic_qos(prefetch_count=1)
             channel.basic_consume(queue=queue_name, on_message_callback=callback)
             
-            print('Shipping Service: Waiting for payment events...')
+            logger.info('Shipping Service: Waiting for payment events...', extra={'correlation_id': 'system'})
             channel.start_consuming()
         except Exception as e:
-            print(f"Consumer error: {str(e)}")
+            logger.error(f"Consumer error: {str(e)}", extra={'correlation_id': 'system'})
             time.sleep(5)
 
 # API endpoints

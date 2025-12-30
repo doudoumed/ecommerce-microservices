@@ -77,7 +77,12 @@ curl -X POST http://localhost:8080/auth/login \
 ### د. تسجيل الدخول
 ```bash
 # دخول staff
-5
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "sara@company.com",
+    "password": "staff123"
+  }'
 ```
 
 ### د. تسجيل الدخول
@@ -107,9 +112,9 @@ curl -X POST http://localhost:8080/auth/login \
 
 ```bash
 # حفظ Token في متغير
-export CUSTOMER_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJlbWFpbCI6ImFobWVkQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwiZXhwIjoxNzY1MTgxNDI3fQ.MwlbfzxRg6jOOPJAfEYX5nHaGeQnRJgvzl6AhGzMwFI"
-export STAFF_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJlbWFpbCI6InNhcmFAY29tcGFueS5jb20iLCJyb2xlIjoic3RhZmYiLCJleHAiOjE3NjUxOTA4MDd9.zrFDPTMrHsZ1liM_fG6mSIuF7cxvnGldm5ls-KRyj38"
-export ADMIN_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjozLCJlbWFpbCI6ImFkbWluQGNvbXBhbnkuY29tIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzY1MTgxNTY3fQ.t6CDfDUtOICkBFrtcvmfelHyhBDk_WUxXEaoaXtFBRA"
+export CUSTOMER_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJlbWFpbCI6ImFobWVkQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwiZXhwIjoxNzY1MTk4MDEzfQ.QqwtrdbN9gysgSl9PqEPhJ79hne5qZgBg7eWy_TWv7U"
+export STAFF_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJlbWFpbCI6InNhcmFAY29tcGFueS5jb20iLCJyb2xlIjoic3RhZmYiLCJleHAiOjE3NjUxOTgyODV9.QELBD_2kEsnryLbydRCWYZ33vBPRlUncJi6_aezj8Rk"
+export ADMIN_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo2LCJlbWFpbCI6ImFkbWluQGV4YW1wbGUuY29tIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzY1Nzg1NjU1fQ.gtLM4oxFrRgV8rykLmINw3XRy2l7UDp6x3jUh_yz33k"
 ---
 
 ## 3. اختبار RBAC (صلاحيات الأدوار)
@@ -128,7 +133,7 @@ curl -X POST http://localhost:8080/api/orders \
   -H "Authorization: Bearer $CUSTOMER_TOKEN" \
   -d '{
     "product_id": 1,
-    "quantity": 2
+    "quantity": 1
   }'
 ```
 
@@ -205,11 +210,11 @@ curl -X POST http://localhost:8080/api/products \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $STAFF_TOKEN" \
   -d '{
-    "name": "Gaming Mouse",
-    "description": "RGB Gaming Mouse",
+    "name": "LRB keyboard",
+    "description": "RGB Gaming Keyboard",
     "price": 45.99,
     "quantity": 100,
-    "sku": "MOUSE001"
+    "sku": "KEYBOARD001"
   }'
 ```
 
@@ -219,7 +224,7 @@ curl -X PUT http://localhost:8080/api/products/1 \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $STAFF_TOKEN" \
   -d '{
-    "name": "Laptop Updated",
+    "name": "LRB keyboard Updated",
     "description": "High-performance laptop",
     "price": 1150.00,
     "quantity": 150
@@ -464,3 +469,11 @@ docker-compose down -v
 7. **Get Notifications** → شاهد جميع الإشعارات المرسلة
 
 🎉 **تم اختبار النظام بالكامل!**
+
+
+'''
+curl -X POST http://localhost:8080/api/orders \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id":2,"quantity":1}'
+'''

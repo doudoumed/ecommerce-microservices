@@ -10,12 +10,60 @@ from functools import wraps
 import pybreaker
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import requests.exceptions
+import logging
+from pythonjsonlogger import jsonlogger
+from flask import g
 
 import pika
 import json
+from prometheus_flask_exporter import PrometheusMetrics
+
+import logstash
+
+# Configure Structured Logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Console Handler (JSON)
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter('%(asctime)s %(level)s %(name)s %(message)s')
+logHandler.setFormatter(formatter)
+logger.addHandler(logHandler)
+
+# Logstash Handler
+logstash_handler = logstash.TCPLogstashHandler('logstash', 5000, version=1)
+logger.addHandler(logstash_handler)
 
 app = Flask(__name__)
+metrics = PrometheusMetrics(app, path=None)
+
+from prometheus_client import generate_latest
+
+@app.route('/metrics')
+def metrics_route():
+    return generate_latest(), 200, {'Content-Type': 'text/plain; version=0.0.4'}
 CORS(app)
+
+@app.before_request
+def before_request():
+    # Extract Correlation ID from header or generate new one (though Gateway should provide it)
+    g.correlation_id = request.headers.get('X-Correlation-ID')
+    if not g.correlation_id:
+        g.correlation_id = "unknown" # Should ideally come from Gateway
+        
+    logger.info(f"Request received: {request.method} {request.path}", extra={
+        'service': 'order-service',
+        'correlation_id': g.correlation_id,
+        'method': request.method,
+        'path': request.path
+    })
+
+# Helper to inject correlation ID into downstream requests
+def get_headers():
+    headers = {}
+    if hasattr(g, 'correlation_id'):
+        headers['X-Correlation-ID'] = g.correlation_id
+    return headers
 
 # Circuit Breaker Configuration
 payment_circuit_breaker = pybreaker.CircuitBreaker(
@@ -25,7 +73,7 @@ payment_circuit_breaker = pybreaker.CircuitBreaker(
 
 # Retry Configuration
 retry_strategy = retry(
-    stop=stop_after_attempt(4),
+    stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=4),
     retry=retry_if_exception_type((requests.exceptions.RequestException, requests.exceptions.Timeout, requests.exceptions.ConnectionError))
 )
@@ -74,15 +122,20 @@ def publish_event(event_type, data):
 
 @retry_strategy
 def check_customer(customer_id):
-    response = requests.get(f'http://customer-service:5001/api/customers/{customer_id}', timeout=3)
+    headers = get_headers()
+    logger.info(f"Checking customer {customer_id}", extra={'correlation_id': g.correlation_id})
+    response = requests.get(f'http://customer-service:5001/api/customers/{customer_id}', headers=headers, timeout=3)
     response.raise_for_status()
     return response
 
 @retry_strategy
 def check_inventory(product_id, quantity):
+    headers = get_headers()
+    logger.info(f"Checking inventory for product {product_id}", extra={'correlation_id': g.correlation_id})
     response = requests.post(
         'http://inventory-service:5002/api/products/check-availability',
         json={'product_id': product_id, 'quantity': quantity},
+        headers=headers,
         timeout=3
     )
     response.raise_for_status()
@@ -90,15 +143,19 @@ def check_inventory(product_id, quantity):
 
 @retry_strategy
 def get_product_price(product_id):
-    response = requests.get(f'http://inventory-service:5002/api/products/{product_id}', timeout=3)
+    headers = get_headers()
+    response = requests.get(f'http://inventory-service:5002/api/products/{product_id}', headers=headers, timeout=3)
     response.raise_for_status()
     return response.json()
 
 @retry_strategy
 def reserve_product(product_id, quantity):
+    headers = get_headers()
+    logger.info(f"Reserving product {product_id}", extra={'correlation_id': g.correlation_id})
     response = requests.post(
         'http://inventory-service:5002/api/products/reserve',
         json={'product_id': product_id, 'quantity': quantity},
+        headers=headers,
         timeout=3
     )
     response.raise_for_status()
@@ -173,9 +230,23 @@ def create_order():
         payment_successful = True
         
     except pybreaker.CircuitBreakerError:
-        print("Circuit Breaker OPEN: Payment Service is down. Fallback to async processing.")
+        logger.warning("Circuit Breaker OPEN: Payment Service is down. Fallback to async processing.", extra={'correlation_id': g.correlation_id})
+        # Fallback: Queue the payment for later processing (simulated by just returning success with pending status)
+        # In a real system, we might push to a dead-letter queue or a separate retry queue
+        return jsonify({
+            'message': 'Order created. Payment processing is delayed (Circuit Breaker).',
+            'order_id': order_id,
+            'payment_status': 'pending_retry',
+            'total_price': total_price
+        }), 202
     except Exception as e:
-        print(f"Payment Service call failed: {str(e)}. Fallback to async processing.")
+        logger.error(f"Payment Service call failed: {str(e)}. Fallback to async processing.", extra={'correlation_id': g.correlation_id})
+        return jsonify({
+            'message': 'Order created. Payment processing is delayed (Error).',
+            'order_id': order_id,
+            'payment_status': 'pending_retry',
+            'total_price': total_price
+        }), 202
     
     # Step 7: Fallback / Async Processing
     # If synchronous payment failed (or CB open), we publish the event for later processing

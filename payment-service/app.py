@@ -10,9 +10,57 @@ import json
 import requests
 import time
 import threading
+import logging
+from pythonjsonlogger import jsonlogger
+from flask import g
+from prometheus_flask_exporter import PrometheusMetrics
+
+import logstash
+
+# Configure Structured Logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Console Handler (JSON)
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter('%(asctime)s %(level)s %(name)s %(message)s')
+logHandler.setFormatter(formatter)
+logger.addHandler(logHandler)
+
+# Logstash Handler
+logstash_handler = logstash.TCPLogstashHandler('logstash', 5000, version=1)
+logger.addHandler(logstash_handler)
 
 app = Flask(__name__)
+metrics = PrometheusMetrics(app, path=None)
+
+from prometheus_client import generate_latest
+
+@app.route('/metrics')
+def metrics_route():
+    return generate_latest(), 200, {'Content-Type': 'text/plain; version=0.0.4'}
 CORS(app)
+
+@app.before_request
+def before_request():
+    # Extract Correlation ID from header
+    g.correlation_id = request.headers.get('X-Correlation-ID')
+    if not g.correlation_id:
+        g.correlation_id = "unknown"
+        
+    logger.info(f"Request received: {request.method} {request.path}", extra={
+        'service': 'payment-service',
+        'correlation_id': g.correlation_id,
+        'method': request.method,
+        'path': request.path
+    })
+
+# Helper to inject correlation ID into downstream requests (if any)
+def get_headers():
+    headers = {}
+    if hasattr(g, 'correlation_id'):
+        headers['X-Correlation-ID'] = g.correlation_id
+    return headers
 
 RABBITMQ_HOST = 'rabbitmq'
 RABBITMQ_PORT = 5672
@@ -61,7 +109,7 @@ def process_payment_logic(order_data):
     amount = order_data['total_price']
     customer_id = order_data.get('customer_id') # Handle potential missing key if called from different context
     
-    print(f"Processing payment for order {order_id}, amount: {amount}")
+    logger.info(f"Processing payment for order {order_id}, amount: {amount}", extra={'correlation_id': g.correlation_id})
     
     # Simulate payment processing
     time.sleep(2)
@@ -78,13 +126,15 @@ def process_payment_logic(order_data):
     
     # Update order payment status (synchronous call to Order Service)
     try:
+        headers = get_headers()
         requests.put(
             f'http://order-service:5003/api/orders/{order_id}/payment-status',
             json={'payment_status': 'completed'},
+            headers=headers,
             timeout=5
         )
     except Exception as e:
-        print(f"Error updating order payment status: {str(e)}")
+        logger.error(f"Error updating order payment status: {str(e)}", extra={'correlation_id': g.correlation_id})
     
     # Publish PaymentCompleted event (asynchronous)
     publish_event('payment.completed', {
@@ -94,7 +144,7 @@ def process_payment_logic(order_data):
         'customer_id': customer_id
     })
     
-    print(f"Payment completed for order {order_id}")
+    logger.info(f"Payment completed for order {order_id}", extra={'correlation_id': g.correlation_id})
     return payment_id
 
 def callback(ch, method, properties, body):
@@ -104,14 +154,14 @@ def callback(ch, method, properties, body):
         event_type = message.get('event')
         data = message.get('data')
         
-        print(f"Received event: {event_type}")
+        logger.info(f"Received event: {event_type}", extra={'correlation_id': 'system'})
         
         if event_type == 'order.created':
             process_payment_logic(data)
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:
-        print(f"Error processing message: {str(e)}")
+        logger.error(f"Error processing message: {str(e)}", extra={'correlation_id': 'system'})
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 def start_consumer():
@@ -133,10 +183,10 @@ def start_consumer():
             channel.basic_qos(prefetch_count=1)
             channel.basic_consume(queue=queue_name, on_message_callback=callback)
             
-            print('Payment Service: Waiting for order events...')
+            logger.info('Payment Service: Waiting for order events...', extra={'correlation_id': 'system'})
             channel.start_consuming()
         except Exception as e:
-            print(f"Consumer error: {str(e)}")
+            logger.error(f"Consumer error: {str(e)}", extra={'correlation_id': 'system'})
             time.sleep(5)
 
 # API endpoints
