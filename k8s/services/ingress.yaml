@@ -1,0 +1,63 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ecommerce-ingress
+  namespace: ecommerce-services
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /api/orders
+        pathType: Prefix
+        backend:
+          service:
+            name: order-service
+            port:
+              number: 5003
+      - path: /api/customers
+        pathType: Prefix
+        backend:
+          service:
+            name: customer-service
+            port:
+              number: 5001
+      - path: /api/products
+        pathType: Prefix
+        backend:
+          service:
+            name: inventory-service
+            port:
+              number: 5002
+      - path: /api/payments
+        pathType: Prefix
+        backend:
+          service:
+            name: payment-service
+            port:
+              number: 5004
+      - path: /api/shipments
+        pathType: Prefix
+        backend:
+          service:
+            name: shipping-service
+            port:
+              number: 5005
+      - path: /api/notifications
+        pathType: Prefix
+        backend:
+          service:
+            name: notification-service
+            port:
+              number: 5006
+      # Optional: Route to Python Gateway if needed for specific logic
+      - path: /gateway
+        pathType: Prefix
+        backend:
+          service:
+            name: api-gateway
+            port:
+              number: 8080

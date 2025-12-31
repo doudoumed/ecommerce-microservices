@@ -22,7 +22,8 @@ A robust, scalable e-commerce backend built with **Python (Flask)**, **Docker**,
 *   **Message Broker**: RabbitMQ
 *   **Logging**: ELK Stack (Elasticsearch 7.17, Logstash, Kibana)
 *   **Monitoring**: Prometheus, Grafana
-*   **Tools**: Docker, Docker Compose
+*   **Orchestration**: Kubernetes (Minikube), Docker Compose
+*   **Tools**: Docker, kubectl, Helm
 
 ## 🏗️ Architecture
 
@@ -36,10 +37,36 @@ The system consists of the following services:
 6.  **Shipping Service** (`:5005`): Delivery scheduling.
 7.  **Notification Service** (`:5006`): User alerts (simulated).
 
+## ☸️ Kubernetes Deployment (New!)
+
+We have migrated to **Kubernetes** for production-grade orchestration.
+
+### Key Features:
+*   **Self-Healing**: Automatic restart of failed pods.
+*   **Auto-Scaling (HPA)**: Scales services based on CPU usage.
+*   **Ingress**: NGINX Ingress Controller for routing.
+*   **Config Management**: Uses ConfigMaps and Secrets.
+
+### Quick Start (K8s):
+```bash
+# 1. Start Minikube
+minikube start --addons=ingress,metrics-server
+
+# 2. Apply Manifests
+kubectl apply -f k8s/namespaces.yaml
+kubectl apply -f k8s/base/
+kubectl apply -f k8s/infra/
+kubectl apply -f k8s/services/
+
+# 3. Verify
+kubectl get pods -n ecommerce-services
+```
+
 ## 📋 Prerequisites
 
 *   Docker
 *   Docker Compose
+*   Minikube & kubectl (for K8s)
 
 ## 🚀 Getting Started
 
