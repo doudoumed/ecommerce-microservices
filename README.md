@@ -142,6 +142,7 @@ curl -X POST http://localhost:8080/api/orders \
 ├── payment-service/         # Payment Service
 ├── shipping-service/        # Shipping Service
 ├── notification-service/    # Notification Service
+├── k8s/                     # Kubernetes Manifests
 ├── logstash/                # Logstash Configuration
 ├── docker-compose.yml       # Orchestration
 ├── prometheus.yml           # Prometheus Config
